@@ -39,13 +39,13 @@ def ui():
     language.change(lambda x: params_update({"language string": language_codes[x]}), language, None)
 
     # DeeplTranslator not work for now; api key required
-    translator = gr.Dropdown(value=params['translator'], choices=["GoogleTranslator", "LibreTranslator", "LocalAlpaca"],
+    translator = gr.Dropdown(value=params['translator'], choices=["GoogleTranslator", "LibreTranslator", "LocalAlpaca", "OneRingTranslator"],
                              label='Translator')
 
     translator.change(lambda x: params_update({"translator": x}), translator, None)
 
     custom_url = gr.Textbox(value=params['custom_url'],
-                            label='Custom URL for translation API (affect LibreTranslator now)')
+                            label='Custom URL for translation API (affect LibreTranslator, OneRingTranslator)')
 
     custom_url.change(lambda x: params_update({"custom_url": x}), custom_url, None)
 
@@ -124,6 +124,48 @@ def local_translator(from_lang:str,to_lang:str,string:str,prompt_tpl:str,body:di
 
     return answer
 
+def translator_main(string,from_lang:str,to_lang:str) -> str:
+    res = ""
+    if params['translator'] == "GoogleTranslator":
+        res = GoogleTranslator(source=from_lang, target=to_lang).translate(string)
+    if params['translator'] == "LibreTranslator":
+        #print("LibreTranslator using input_modifier")
+        custom_url = params['custom_url']
+        if custom_url == "": custom_url = "https://translate.argosopentech.com/"
+        res = LibreTranslator(source=from_lang, target=to_lang, custom_url = params['custom_url']).translate(string)
+    if params['translator'] == "LocalAlpaca":
+        #print("GoogleTranslator using")
+        #return GoogleTranslator(source=params['language string'], target='en').translate(string)
+        res = local_translator(from_lang,to_lang,string,tpl_alpaca)
+    if params['translator'] == "OneRingTranslator":
+        #print("GoogleTranslator using")
+        #return GoogleTranslator(source=params['language string'], target='en').translate(string)
+        custom_url = params['custom_url']
+        if custom_url == "":
+            res = "Please, setup custom_url for OneRingTranslator (usually http://127.0.0.1:4990/)"
+        else:
+            import requests
+            response_orig = requests.get(f"{custom_url}translate", params={"text":string,"from_lang":from_lang,"to_lang":to_lang})
+            if response_orig.status_code == 200:
+                response = response_orig.json()
+                #print("OneRingTranslator result:",response)
+
+                if response.get("error") is not None:
+                    print(response)
+                    res = "ERROR: "+response.get("error")
+                elif response.get("result") is not None:
+                    res = response.get("result")
+                else:
+                    print(response)
+                    res = "Unknown result from OneRingTranslator"
+            elif response_orig.status_code == 404:
+                res = "404 error: can't find endpoint"
+            elif response_orig.status_code == 500:
+                res = "500 error: OneRingTranslator server error"
+            else:
+                res = f"{response_orig.status_code} error"
+
+    return res
 
 def input_modifier(string):
     """
@@ -139,22 +181,7 @@ def input_modifier(string):
     if is_debug_console:
         print("Input_modifier string BEFORE translate:",string)
 
-    res = ""
-    if params['translator'] == "GoogleTranslator":
-        #print("GoogleTranslator using")
-        res = GoogleTranslator(source=params['language string'], target='en').translate(string)
-    if params['translator'] == "DeeplTranslator":
-        #print("Deepl using")
-        res = DeeplTranslator(source=params['language string'], target='en').translate(string)
-    if params['translator'] == "LibreTranslator":
-        #print("LibreTranslator using input_modifier")
-        custom_url = params['custom_url']
-        if custom_url == "": custom_url = "https://translate.argosopentech.com/"
-        res = LibreTranslator(source=params['language string'], target='en', custom_url = params['custom_url']).translate(string)
-    if params['translator'] == "LocalAlpaca":
-        #print("GoogleTranslator using")
-        #return GoogleTranslator(source=params['language string'], target='en').translate(string)
-        res = local_translator(params['language string'],'en',string,tpl_alpaca)
+    res = translator_main(string,params['language string'],'en')
 
     if is_debug_console:
         print("Input_modifier string AFTER translate:",res)
@@ -174,20 +201,7 @@ def output_modifier(string):
     if is_debug_console:
         print("Output_modifier string BEFORE translate:",string)
 
-    res = ""
-    if params['translator'] == "GoogleTranslator":
-        res = GoogleTranslator(target=params['language string'], source='en').translate(string)
-    if params['translator'] == "DeeplTranslator":
-        res = DeeplTranslator(target=params['language string'], source='en').translate(string)
-    if params['translator'] == "LibreTranslator":
-        #print("LibreTranslator using output_modifier")
-        custom_url = params['custom_url']
-        if custom_url == "": custom_url = "https://translate.argosopentech.com/"
-        res = LibreTranslator(target=params['language string'], source='en', custom_url = custom_url).translate(string)
-    if params['translator'] == "LocalAlpaca":
-        #print("GoogleTranslator using")
-        #return GoogleTranslator(source=params['language string'], target='en').translate(string)
-        res = local_translator('en',params['language string'],string,tpl_alpaca)
+    res = translator_main(string,'en',params['language string'])
 
     if is_debug_console:
         print("Output_modifier string AFTER translate:",res)
